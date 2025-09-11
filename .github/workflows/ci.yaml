@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: "0.12.0"
+
+    - name: Build
+      run: zig build -Doptimize=ReleaseSafe
+
+    - name: Test
+      run: zig build test
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: util
+        path: zig-out/bin/util
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: util
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: util
