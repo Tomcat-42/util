@@ -23,9 +23,6 @@ pub fn build(b: *std.Build) void {
     const util_test = b.addTest(.{ .root_module = util_mod });
     const util_check = b.addLibrary(.{ .name = "util_check", .root_module = util_mod });
 
-    // Install
-    b.installArtifact(util_lib);
-
     // Test
     const run_util_tests = b.addRunArtifact(util_test);
     const test_step = b.step("test", "Run tests");
