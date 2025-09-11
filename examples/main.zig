@@ -5,7 +5,7 @@ const getopt = util.getopt;
 
 pub fn main() !void {
     var opts = getopt.init("a:b::c");
-    while (try opts.next()) |opt| switch (opt) {
+    while (opts.next() catch opts.usage()) |opt| switch (opt) {
         'a' => try stdout.print(
             "Option 'a' with argument: {s}\n",
             .{opts.optarg.?},

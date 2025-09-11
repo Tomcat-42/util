@@ -1,9 +1,11 @@
 const std = @import("std");
+const fs = std.fs;
 const ascii = std.ascii;
 const sort = std.sort;
 const mem = std.mem;
 const assert = std.debug.assert;
 const os = std.os;
+const process = std.process;
 
 pub const Error = error{ InvalidOption, MissingParameter };
 
@@ -16,32 +18,68 @@ const State = enum {
 };
 
 optstring: []const u8,
+usagestring: []const u8,
 index: usize = 1, // Current index in os.argv
 position: usize = 0, // Current position in os.argv[index]
+state: State = .LookingForOptions,
 
 optarg: ?[]const u8 = null,
 optopt: ?u8 = null,
 optind: usize = 0,
-state: State = .LookingForOptions,
 
 pub fn init(comptime optstring: []const u8) @This() {
     comptime for (optstring) |c|
         if (!ascii.isAlphabetic(c) and c != ':')
             @compileError("Invalid character in optstring");
 
+    const usagestring = comptime usage: {
+        var flags: []const u8 = ""; // all opts that don't take args
+        var options: []const u8 = ""; // all opts that take args
+        var optionalOptions: []const u8 = ""; // all opts that take optional args
+
+        for (optstring, 0..) |c, i| if (ascii.isAlphabetic(c)) {
+            if (i + 1 < optstring.len and optstring[i + 1] == ':') {
+                if (i + 2 < optstring.len and optstring[i + 2] == ':') {
+                    optionalOptions = optionalOptions ++ optstring[i .. i + 1];
+                } else {
+                    options = options ++ optstring[i .. i + 1];
+                }
+            } else {
+                flags = flags ++ optstring[i .. i + 1];
+            }
+        };
+
+        var usagestring: []const u8 = "";
+        if (flags.len > 0) usagestring = usagestring ++ "[-" ++ flags ++ "]";
+
+        for (0..options.len) |i| {
+            const prefix = if (usagestring.len == 0) "" else " ";
+            usagestring = usagestring ++ prefix ++ "[-" ++ options[i .. i + 1] ++ " <value>]";
+        }
+
+        for (0..optionalOptions.len) |i| {
+            const prefix = if (usagestring.len == 0) "" else " ";
+            usagestring = usagestring ++ prefix ++ "[-" ++ optionalOptions[i .. i + 1] ++ " ?<value>]";
+        }
+
+        break :usage usagestring;
+    };
+
     return .{
         .optstring = optstring,
         .optind = partitionArgvInPlace(optstring),
+        .usagestring = usagestring,
     };
 }
 
 pub fn next(this: *@This()) Error!?u8 {
-    if (this.index >= os.argv.len) return null;
     this.optarg = null;
     this.optopt = null;
 
     return value: switch (this.state) {
         .LookingForOptions => {
+            if (this.index >= os.argv.len) return null;
+
             const current: []const u8 = mem.sliceTo(os.argv[this.index], 0);
             const opt = current[this.position];
 
@@ -154,6 +192,22 @@ pub fn reset(this: *@This()) void {
     this.optarg = null;
     this.optopt = null;
     this.state = .LookingForOptions;
+}
+
+/// Prints the usage to stderr and exits the program with a failure code.
+pub fn usage(this: *const @This()) noreturn {
+    var stderr_buffer: [4096]u8 = undefined;
+    var stderr_writer = fs.File.stderr().writer(&stderr_buffer);
+    const stderr = &stderr_writer.interface;
+
+    stderr.print("usage: {s} {s}\n", .{
+        os.argv[0],
+        this.usagestring,
+    }) catch @panic("failed to print usage");
+
+    stderr.flush() catch @panic("failed to flush stderr");
+
+    process.exit(1);
 }
 
 // https://youtu.be/q9zKYh8sY_E?si=_924uJdHfDiPQ5Dc
@@ -575,4 +629,52 @@ test "getopt optional arguments and positionals" {
 
     try testing.expectEqual(4, first_positional_idx);
     try testing.expectEqualDeep(&expected_order, actual_order);
+}
+
+test "getopt usagestring generation" {
+    const testing = std.testing;
+    const allocator = testing.allocator;
+    const getopt = @This();
+
+    os.argv = argv: {
+        var argv_slice: @TypeOf(os.argv) = try allocator.alloc([*:0]u8, 1);
+        argv_slice[0] = try allocator.dupeZ(u8, "program");
+        break :argv argv_slice;
+    };
+    defer {
+        for (os.argv) |arg| allocator.free(mem.sliceTo(arg, 0));
+        allocator.free(os.argv);
+    }
+
+    {
+        const opts = getopt.init("abc");
+        try testing.expectEqualStrings("[-abc]", opts.usagestring);
+    }
+
+    {
+        const opts = getopt.init("a:b:");
+        try testing.expectEqualStrings("[-a <value>] [-b <value>]", opts.usagestring);
+    }
+
+    {
+        const opts = getopt.init("c::d::");
+        try testing.expectEqualStrings("[-c ?<value>] [-d ?<value>]", opts.usagestring);
+    }
+
+    {
+        const opts = getopt.init("h:i::j:fgk");
+        const expected = "[-fgk] [-h <value>] [-j <value>] [-i ?<value>]";
+        try testing.expectEqualStrings(expected, opts.usagestring);
+    }
+
+    {
+        const opts = getopt.init("");
+        try testing.expectEqualStrings("", opts.usagestring);
+    }
+
+    {
+        const opts = getopt.init("a:bcde:f");
+        const expected = "[-bcdf] [-a <value>] [-e <value>]";
+        try testing.expectEqualStrings(expected, opts.usagestring);
+    }
 }
