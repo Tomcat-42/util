@@ -1,0 +1,11 @@
+util
+====
+
+Dead simple mini utilities that I find myself copying from one project 
+to another packaged into a single zig module.
+
+- getopt: Posix-ish compatile implementation of https://man7.org/linux/man-pages/man3/getopt.3.html.
+- err: Ergonomic error handling for functions returning `std.os.linux.E` .
+- syscall: Poor man's `strace` for linux syscalls in zig.
+
+See `examples` for usage.
