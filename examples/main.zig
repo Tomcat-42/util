@@ -19,9 +19,9 @@ pub fn main() !void {
     };
 
     if (opts.optind < std.os.argv.len) {
-        try stdout.print("Remaining arguments: ", .{});
+        try stdout.print("Remaining arguments:\n", .{});
         for (std.os.argv[opts.optind..]) |arg|
-            try stdout.print("  {s} ", .{arg});
+            try stdout.print("\t{s}\n", .{arg});
         try stdout.print("\n", .{});
     }
 

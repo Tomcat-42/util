@@ -171,12 +171,25 @@ fn partitionArgvInPlace(comptime optstring: []const u8) usize {
             var blockLen: usize = 1;
             if (arg.len > 1) {
                 const optChar = arg[1];
-                const optIndex = mem.indexOfScalar(u8, optstring, optChar);
+                if (mem.indexOfScalar(u8, optstring, optChar)) |optIndex| {
+                    if (optIndex + 1 < optstring.len and optstring[optIndex + 1] == ':') {
+                        const is_optional = (optIndex + 2 < optstring.len and optstring[optIndex + 2] == ':');
+                        const has_next_token = (arg.len == 2 and (boundary + 1 < os.argv.len));
 
-                if ((optIndex != null) and
-                    (optIndex.? + 1 < optstring.len and optstring[optIndex.? + 1] == ':') and
-                    (optIndex.? + 2 >= optstring.len or optstring[optIndex.? + 2] != ':') and
-                    (arg.len == 2 and (boundary + 1 < os.argv.len))) blockLen = 2;
+                        if (has_next_token) {
+                            if (is_optional) {
+                                const next_arg = mem.sliceTo(os.argv[boundary + 1], 0);
+                                const next_is_option = (next_arg.len > 0 and next_arg[0] == '-') and
+                                    !mem.eql(u8, next_arg, "-") and !mem.eql(u8, next_arg, "--");
+                                if (!next_is_option) {
+                                    blockLen = 2;
+                                }
+                            } else {
+                                blockLen = 2;
+                            }
+                        }
+                    }
+                }
             }
             boundary += blockLen;
         }
@@ -197,12 +210,25 @@ fn partitionArgvInPlace(comptime optstring: []const u8) usize {
         var optionBlockLen: usize = 1;
         if (optionArg.len > 1) {
             const optChar = optionArg[1];
-            const optIndex = mem.indexOfScalar(u8, optstring, optChar);
+            if (mem.indexOfScalar(u8, optstring, optChar)) |optIndex| {
+                if (optIndex + 1 < optstring.len and optstring[optIndex + 1] == ':') {
+                    const is_optional = (optIndex + 2 < optstring.len and optstring[optIndex + 2] == ':');
+                    const has_next_token = (optionArg.len == 2 and (nextOption + 1 < os.argv.len));
 
-            if ((optIndex != null) and
-                (optIndex.? + 1 < optstring.len and optstring[optIndex.? + 1] == ':') and
-                (optIndex.? + 2 >= optstring.len or optstring[optIndex.? + 2] != ':') and
-                (optionArg.len == 2 and (nextOption + 1 < os.argv.len))) optionBlockLen = 2;
+                    if (has_next_token) {
+                        if (is_optional) {
+                            const next_arg = mem.sliceTo(os.argv[nextOption + 1], 0);
+                            const next_is_option = (next_arg.len > 0 and next_arg[0] == '-') and
+                                !mem.eql(u8, next_arg, "-") and !mem.eql(u8, next_arg, "--");
+                            if (!next_is_option) {
+                                optionBlockLen = 2;
+                            }
+                        } else {
+                            optionBlockLen = 2;
+                        }
+                    }
+                }
+            }
         }
 
         const endOfBlock = nextOption + optionBlockLen;
@@ -488,6 +514,48 @@ test "permute argv in-place without allocations" {
     }
 
     const optstring = "vo:";
+    const first_positional_idx = partitionArgvInPlace(optstring);
+
+    const expected_order = [_][]const u8{
+        "program",
+        "-o",
+        "file.txt",
+        "-v",
+        "pos1",
+        "pos2",
+        "pos3",
+    };
+
+    var actual_order = try allocator.alloc([]const u8, os.argv.len);
+    defer allocator.free(actual_order);
+    for (os.argv, 0..) |arg, i|
+        actual_order[i] = mem.sliceTo(arg, 0);
+
+    try testing.expectEqual(4, first_positional_idx);
+    try testing.expectEqualDeep(&expected_order, actual_order);
+}
+
+test "getopt optional arguments and positionals" {
+    const testing = std.testing;
+    const allocator = std.testing.allocator;
+
+    os.argv = argv: {
+        var argv_slice: @TypeOf(os.argv) = try allocator.alloc([*:0]u8, 7);
+        argv_slice[0] = try allocator.dupeZ(u8, "program");
+        argv_slice[1] = try allocator.dupeZ(u8, "pos1");
+        argv_slice[2] = try allocator.dupeZ(u8, "-o");
+        argv_slice[3] = try allocator.dupeZ(u8, "file.txt");
+        argv_slice[4] = try allocator.dupeZ(u8, "pos2");
+        argv_slice[5] = try allocator.dupeZ(u8, "-v");
+        argv_slice[6] = try allocator.dupeZ(u8, "pos3");
+        break :argv argv_slice;
+    };
+    defer {
+        for (os.argv) |arg| allocator.free(mem.sliceTo(arg, 0));
+        allocator.free(os.argv);
+    }
+
+    const optstring = "vo::";
     const first_positional_idx = partitionArgvInPlace(optstring);
 
     const expected_order = [_][]const u8{
