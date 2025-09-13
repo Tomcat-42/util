@@ -194,20 +194,18 @@ pub fn reset(this: *@This()) void {
     this.state = .LookingForOptions;
 }
 
-/// Prints the usage to stderr and exits the program with a failure code.
-pub fn usage(this: *const @This()) noreturn {
+/// Prints the usage to stderr.
+pub fn usage(this: *const @This()) !void {
     var stderr_buffer: [4096]u8 = undefined;
     var stderr_writer = fs.File.stderr().writer(&stderr_buffer);
     const stderr = &stderr_writer.interface;
 
-    stderr.print("usage: {s} {s}\n", .{
+    try stderr.print("usage: {s} {s}\n", .{
         os.argv[0],
         this.usagestring,
-    }) catch @panic("failed to print usage");
+    });
 
-    stderr.flush() catch @panic("failed to flush stderr");
-
-    process.exit(1);
+    try stderr.flush();
 }
 
 // https://youtu.be/q9zKYh8sY_E?si=_924uJdHfDiPQ5Dc
