@@ -208,6 +208,10 @@ pub fn usage(this: *const @This()) !void {
     try stderr.flush();
 }
 
+pub fn positionals(this: *const @This()) ?@TypeOf(os.argv) {
+    return if(this.optind < os.argv.len) os.argv[this.optind..] else null;
+}
+
 // https://youtu.be/q9zKYh8sY_E?si=_924uJdHfDiPQ5Dc
 fn partitionArgvInPlace(comptime optstring: []const u8) usize {
     var boundary: usize = 1;
